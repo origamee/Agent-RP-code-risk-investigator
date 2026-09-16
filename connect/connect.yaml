@@ -1,0 +1,49 @@
+input:
+  http_client:
+    url: https://api.github.com/events
+    verb: GET
+    headers:
+      User-Agent: redpanda-fde-exercise
+      Accept: application/vnd.github+json
+    rate_limit: github_poll
+
+rate_limit_resources:
+  - label: github_poll
+    local:
+      count: 1
+      interval: 60s
+
+pipeline:
+  processors:
+    - unarchive:
+        format: json_array
+
+    - mapping: |
+        root = if this.type == "PushEvent" {
+          {
+            "event_id": this.id,
+            "repo_name": this.repo.name,
+            "repo_url": this.repo.url,
+            "actor": this.actor.login,
+            "before_sha": this.payload.before,
+            "head_sha": this.payload.head,
+            "ref": this.payload.ref,
+            "created_at": this.created_at
+          }
+        } else {
+          deleted()
+        }
+    - dedupe:
+        cache: event_cache
+        key: '${! this.event_id }'
+
+output:
+  redpanda:
+    seed_brokers:
+      - redpanda:9092
+    topic: github-push-events
+
+cache_resources:
+  - label: event_cache
+    memory:
+      default_ttl: 1h
