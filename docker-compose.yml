@@ -20,6 +20,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
   connect:
     image: docker.redpanda.com/redpandadata/connect:latest
     depends_on:
@@ -28,3 +29,28 @@ services:
     volumes:
       - ./connect/connect.yaml:/connect.yaml
     command: ["run", "/connect.yaml"]
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["ollama pull llama3.2:3b"]
+
+volumes:
+  ollama_data:
