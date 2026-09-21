@@ -298,7 +298,7 @@ right now it’s effectively one reasoning worker. Redpanda gives us a natural s
 - Result storage: 
 code-risk-results is enough for this exercise, and the FastAPI service keeps a recent in-memory view. For a real customer I’d likely materialize the results into something durable/queryable like Postgres or a search/analytics store while keeping Redpanda as the event backbone.
 
-## Raw final thoughts
+## Raw final thoughts (Why this Matters)
 
 - Engineering teams generate more code changes than humans can deeply review.
 - The system automatically enriches each change with the actual diff and uses AI to help identify which changes deserve attention.
