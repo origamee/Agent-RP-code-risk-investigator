@@ -280,22 +280,22 @@ Once we processed everything, the model had to interpret something semantically 
 
 Here are are raw notes on somethings that I learned:
 
-##Malformed LLM output was probably the biggest surprise. 
+###Malformed LLM output was probably the biggest surprise. 
 Even when I explicitly asked for JSON, the local model sometimes returned extra text, foreign-language content, or nothing parseable. That forced me to add extraction, schema validation, retry prompts, and a conservative fallback instead of trusting the model output in the end.
-##Confidence was not really calibrated. 
+###Confidence was not really calibrated. 
 I saw 0.8 confidence on conclusions that were clearly questionable, while very simple low-risk changes sometimes came back with 0.0. So confidence was useful for routing, but I would not treat the number as objectively meaningful without evaluation/calibration at the first pass, specially coming out of Ollama.
 The public GitHub stream was much noisier than expected. I saw spam repos, README changes, generated content, foreign-language content, non-code changes, etc. In production I would probably add stronger pre-model filtering so I don’t spend model cycles on obviously irrelevant events.
-##Rate limits became real very quickly. 
+###Rate limits became real very quickly. 
 The public event stream was fine, but fetching diffs caused 403/429 behavior. Adding an optional GitHub token helped, and I then added retry/backoff plus permanent-vs-transient error handling.
-##The worker originally crashed when the retry model call timed out. 
+###The worker originally crashed when the retry model call timed out. 
 That was useful because it exposed that retry logic itself also has to be protected. I changed the model call to fail safely and added bounded output/token limits.
-##Large diffs were another problem. 
+###Large diffs were another problem. 
 Right now we truncate at 12,000 characters. That keeps latency and local-model load bounded, but obviously the security-relevant material could theoretically be beyond the cutoff. In production I would select important files/chunks rather than blindly cutting the string.
-##Observability is minimal right now. 
+###Observability is minimal right now. 
 For production I’d want metrics around events consumed, events skipped, LLM retries, parse failures, latency, GitHub failures, model failures, confidence distribution, and routing outcomes.
-##Scaling: 
+###Scaling: 
 right now it’s effectively one reasoning worker. Redpanda gives us a natural scaling model by adding partitions and multiple workers in the same consumer group.
-##Result storage: 
+###Result storage: 
 code-risk-results is enough for this exercise, and the FastAPI service keeps a recent in-memory view. For a real customer I’d likely materialize the results into something durable/queryable like Postgres or a search/analytics store while keeping Redpanda as the event backbone.
 
 ## Raw final thoughts
