@@ -51,3 +51,17 @@ Create a local `.env` file:
 
 ```bash
 cp .env.example .env
+
+## Tradeoffs
+
+### Tradeoff 1
+[Your paragraph: choice, alternative, why you chose it, when you'd switch.]
+
+### Tradeoff 2
+[Your paragraph: choice, alternative, why you chose it, when you'd switch.]
+
+## Surprises and Production Considerations
+[Your paragraph on malformed LLM JSON, model confidence, GitHub noise/rate limits, and what you'd improve in production.]
+
+## Why This Matters
+[3–4 sentences in your own words for a nontechnical customer.]
