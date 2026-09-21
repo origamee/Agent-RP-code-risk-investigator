@@ -260,41 +260,47 @@ Expected result:
 
 ### Tradeoff 1
 
-**TODO — write this section in my own words.**
-
-Cover:
-- what decision I made
-- what alternative I considered
-- why I chose this design for the exercise
-- when I would switch to the alternative
+- Chose llama3.2:3b because of its strong performance-to-size ratio, fast local setup, Docker compatibility, and my familiarity with Ollama.
+- It made the project reproducible and self-contained really quickly without me handling any external dependencies.
+- Tradeoff: weaker model quality, more prompt/retry work, less reliable structured output, and less consistent confidence/accuracy.
+- I’d switch to a larger or hosted model when production accuracy and consistency matter more than local simplicity/cost.
 
 ### Tradeoff 2
 
-**TODO — write this section in my own words.**
+I had the choice for choosing either of the sources from GitHub, USGS earthquake data, Hacker News data, and Wikipedia recent changes, I chose GitHub. 
 
-Cover:
-- what decision I made
-- what alternative I considered
-- why I chose this design for the exercise
-- when I would switch to the alternative
+- The feed coming out of USGS was more structured than I wanted it to be, so I thought that running an LLM on an source that has already structured fields might make the reasoning layer behave more like classification rather than justified reasoning. And I believe the assignment actually warned against using some verbiage like "regex wearing a costume," so I stayed away from the USGS source due to these reasons. 
+- HackerNews gives back a ton of links and then those need to be sifted through. And link handling can be a pain (we all remember beautiful soup and Selenium libraries so you can say I am biased). Examples are HTML, JS heavy pages, going through paywalls, files formats hosted on those pages etc. So I didn't want complexity to be in scraping the web, I'd rather deal with complexity in our actual mission which was -- event pipeline+reasoning.
+- Wikipedia is a true SSE stream which brings a ton of framing, heartbeats, connection drop + reconnection logic, JSON lines terminated inefficiently etc
+- With Github I had to still deal with a few challenges but I believe these issues were more inline with event pipeline gen i.e. foreign language changes, non-code repos, spam. I started with a non-authenticated feed but was dealing with API rate limiting for Github diff/enrichment type API calls. So switched to a feed with an API token and the rate limiting for this particular function went away mostly. But then I had to add filtering, dedupe, diff for enrichment, retry logic, permanent vs transient failure handling, bounded diff size, structured output validation, fallback behavior etc.
+Once we processed everything, the model had to interpret something semantically meaningful
+- So ultimately, I had something real through Github that the model can reason on i.e. "actual code diff"
 
 ## Surprises and Production Considerations
 
-**TODO — write this section in my own words.**
+Here are are raw notes on somethings that I learned:
 
-Cover what I actually observed while building and running the system, plus what I would change for a production deployment.
+##Malformed LLM output was probably the biggest surprise. 
+Even when I explicitly asked for JSON, the local model sometimes returned extra text, foreign-language content, or nothing parseable. That forced me to add extraction, schema validation, retry prompts, and a conservative fallback instead of trusting the model output in the end.
+##Confidence was not really calibrated. 
+I saw 0.8 confidence on conclusions that were clearly questionable, while very simple low-risk changes sometimes came back with 0.0. So confidence was useful for routing, but I would not treat the number as objectively meaningful without evaluation/calibration at the first pass, specially coming out of Ollama.
+The public GitHub stream was much noisier than expected. I saw spam repos, README changes, generated content, foreign-language content, non-code changes, etc. In production I would probably add stronger pre-model filtering so I don’t spend model cycles on obviously irrelevant events.
+##Rate limits became real very quickly. 
+The public event stream was fine, but fetching diffs caused 403/429 behavior. Adding an optional GitHub token helped, and I then added retry/backoff plus permanent-vs-transient error handling.
+##The worker originally crashed when the retry model call timed out. 
+That was useful because it exposed that retry logic itself also has to be protected. I changed the model call to fail safely and added bounded output/token limits.
+##Large diffs were another problem. 
+Right now we truncate at 12,000 characters. That keeps latency and local-model load bounded, but obviously the security-relevant material could theoretically be beyond the cutoff. In production I would select important files/chunks rather than blindly cutting the string.
+##Observability is minimal right now. 
+For production I’d want metrics around events consumed, events skipped, LLM retries, parse failures, latency, GitHub failures, model failures, confidence distribution, and routing outcomes.
+##Scaling: 
+right now it’s effectively one reasoning worker. Redpanda gives us a natural scaling model by adding partitions and multiple workers in the same consumer group.
+##Result storage: 
+code-risk-results is enough for this exercise, and the FastAPI service keeps a recent in-memory view. For a real customer I’d likely materialize the results into something durable/queryable like Postgres or a search/analytics store while keeping Redpanda as the event backbone.
 
-Useful areas to consider:
-- malformed local-model JSON
-- poorly calibrated model confidence
-- noisy/spam/non-code public GitHub events
-- GitHub API rate limits
-- large diff truncation
-- stronger production observability
-- scaling consumers by partition
-- durable result storage or downstream materialization
-- stronger model/evaluation strategy
+## Raw final thoughts
 
-## Why This Matters
-
-**TODO — write 3–4 sentences in my own words for a nontechnical customer stakeholder.**
+- Engineering teams generate more code changes than humans can deeply review.
+- The system automatically enriches each change with the actual diff and uses AI to help identify which changes deserve attention.
+- The important part is that uncertain results are escalated instead of quietly treated as safe.
+- That lets human reviewers spend time on the changes most likely to matter, rather than manually inspecting everything.
