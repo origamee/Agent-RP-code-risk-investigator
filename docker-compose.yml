@@ -21,11 +21,27 @@ services:
       timeout: 3s
       retries: 10
 
-  connect:
-    image: docker.redpanda.com/redpandadata/connect:latest
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.2
+
     depends_on:
       redpanda:
         condition: service_healthy
+
+    command:
+      - topic
+      - create
+      - github-push-events
+      - code-risk-results
+      - --if-not-exists
+      - -X
+      - brokers=redpanda:9092
+
+  connect:
+    image: docker.redpanda.com/redpandadata/connect:latest
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
     volumes:
       - ./connect/connect.yaml:/connect.yaml
     command: ["run", "/connect.yaml"]
@@ -51,6 +67,40 @@ services:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
     command: ["ollama pull llama3.2:3b"]
+  
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+
+    restart: on-failure
+    
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+
+      ollama-init:
+        condition: service_completed_successfully
+
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      OLLAMA_URL: http://ollama:11434
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    
+  serve:
+    build:
+      context: .
+      dockerfile: serve/Dockerfile
+
+    depends_on:
+      topic-init:
+        condition: service_completed_successfully
+
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+
+    ports:
+      - "8000:8000"
 
 volumes:
   ollama_data:

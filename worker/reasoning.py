@@ -25,20 +25,29 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 MODEL = "llama3.2:3b"
 
 def call_model(prompt: str) -> str:
-    response = requests.post(
-        f"{OLLAMA_URL}/api/chat",
-        json={
-            "model": MODEL,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "stream": False,
-        },
-        timeout=60,
-    )
+    try:
+        response = requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={
+                "model": MODEL,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "stream": False,
+                "options": {
+                    "num_predict": 300,
+                    "temperature": 0.1,
+                },
+            },
+            timeout=90,
+        )
 
-    response.raise_for_status()
-    return response.json()["message"]["content"]
+        response.raise_for_status()
+        return response.json()["message"]["content"]
+
+    except requests.RequestException as exc:
+        print(f"Model call failed: {exc}")
+        return ""
 
 #Tihs will turn unreliable model text from extract_changes() below into a validated application object.
 def parse_change_summary(raw: str) -> ChangeSummary:
@@ -172,6 +181,9 @@ def parse_risk_assessment(raw: str) -> RiskAssessment:
         reason=data["reason"],
     )
 
+'''bad response -> explicitly tell model exactly how it screwed up
+             -> demand strict JSON
+             -> fallback if still broken'''
 def generate_validated_risk_assessment(
     diff: str,
     change_summary: ChangeSummary
@@ -183,7 +195,33 @@ def generate_validated_risk_assessment(
         return parse_risk_assessment(raw)
 
     except (ValueError, json.JSONDecodeError, KeyError):
-        retry_raw = assess_risk(diff, change_summary)
+
+        retry_prompt = f"""
+Your previous response was invalid.
+
+Return ONLY valid JSON in exactly this structure:
+
+{{
+  "summary": "short risk summary",
+  "risk": "low",
+  "confidence": 0.8,
+  "reason": "short explanation"
+}}
+
+Rules:
+- risk must be exactly: low, medium, or high
+- confidence must be a number between 0.0 and 1.0
+- no markdown
+- no text before or after the JSON
+
+CHANGE SUMMARY:
+{change_summary}
+
+DIFF:
+{diff}
+"""
+
+        retry_raw = call_model(retry_prompt)
 
         try:
             return parse_risk_assessment(retry_raw)
@@ -195,3 +233,12 @@ def generate_validated_risk_assessment(
                 confidence=0.0,
                 reason="Model failed to return valid structured output",
             )
+
+def route_decision(risk_assessment: RiskAssessment) -> str:
+    if risk_assessment.confidence < 0.6:
+        return "needs_human_review"
+
+    if risk_assessment.risk == "high":
+        return "urgent_review"
+
+    return "normal"
